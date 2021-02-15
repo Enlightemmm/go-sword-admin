@@ -20,7 +20,7 @@ func Init(cfg *config.Redis) (err error) {
 		Password: cfg.Password, // no password set
 		DB:       cfg.DB,       // use default DB
 		PoolSize: cfg.PoolSize,
-		IdleTimeout: time.Duration(cfg.IdleTimeOutSec),
+		IdleTimeout: time.Duration(cfg.IdleTimeOutSec),		// A Duration represents the elapsed time between two instants
 	})
 
 	_, err = global.Rdb.Ping().Result()
