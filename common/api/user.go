@@ -23,11 +23,11 @@ type UserMessage struct {
 }
 
 type UserInfo struct {
-	Jobs           *[]models.SysJob  //用户岗位
-	Roles          *[]models.SysRole //用户角色
-	MenuPermission *[]string         //菜单权限
-	Dept           *models.SysDept   //部门
-	DataScopes     *[]int            //数据权限
+	Jobs           *[]models.SysJob
+	Roles          *[]models.SysRole
+	MenuPermission *[]string
+	Dept           *models.SysDept
+	DataScopes     *[]int
 }
 
 var ErrorUserNotLogin = errors.New("用户未登录")
@@ -47,7 +47,7 @@ func GetCurrentUserId(c *gin.Context) (userId int, err error) {
 	return
 }
 
-//TODO GetCurrentUserInfo 获取当前登录的用户信息
+//TODO GetCurrentUserInfo 获取当前登录的用户信息  需要删除
 func GetCurrentUserInfo(c *gin.Context) (*models.RedisUserInfo, error) {
 	res, ok := c.Get(CtxUserInfoKey)
 	if !ok {
@@ -58,6 +58,7 @@ func GetCurrentUserInfo(c *gin.Context) (*models.RedisUserInfo, error) {
 	return userInfo, nil
 }
 
+// GetUserMessage 获取当前登录的用户ID和用户名
 func GetUserMessage(c *gin.Context) (*UserMessage, error) {
 	res, ok := c.Get(CtxUserIdAndName)
 	if !ok {

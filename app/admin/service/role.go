@@ -6,6 +6,7 @@ import (
 	"project/app/admin/models/dto"
 	"project/utils"
 	"strconv"
+	"sync"
 )
 
 type Role struct {
@@ -14,10 +15,24 @@ type Role struct {
 // 多条件查询角色
 func (e Role) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (roleData bo.SelectRoleArrayBo, err error) {
 	role := new(models.SysRole)
-	sysRole, err := role.SelectRoles(p, orderData)
+	sysRole, status, err := role.SelectRoles(p, orderData)
 	if err != nil {
 		return
 	}
+	// 1. 查询缓存All
+	if status != 1 {
+		roleAll, err := models.SelectRoleAllCaches()
+		if err == nil && len(roleAll) > 0 {
+			// 分页
+			if p.Current*p.Size > len(roleAll) {
+				roleData.Records = roleAll[(p.Current-1)*p.Size : len(roleAll)]
+			} else {
+				roleData.Records = roleAll[(p.Current-1)*p.Size : p.Current*p.Size]
+			}
+			sysRole = nil
+		}
+	}
+
 	if len(sysRole) > 0 {
 		for _, value := range sysRole {
 			var recordRole bo.RecordRole
@@ -35,18 +50,25 @@ func (e Role) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (roleD
 			} else {
 				recordRole.Protection = false
 			}
-			sysDept, sysMenu, errSysMenu := role.SysDeptAndMenu(value.ID)
-			if errSysMenu != nil {
-				err = errSysMenu
-				return
-			}
-			deptList, menuList, errGetMenu := getDeptsMenus(sysDept, sysMenu)
-			if errGetMenu != nil {
-				err = errGetMenu
-				return
-			}
-			recordRole.Depts = deptList
-			recordRole.Menus = menuList
+
+			// 查询缓存
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				recordRole.Depts, err = models.InsertDept(role, value.ID)
+				if err != nil {
+					return
+				}
+				wg.Done()
+			}()
+			go func() {
+				recordRole.Menus, err = models.InsertMenu(role, value.ID)
+				if err != nil {
+					return
+				}
+				wg.Done()
+			}()
+			wg.Wait()
 			if recordRole.Depts == nil {
 				recordRole.Depts = make([]bo.Dept, 0)
 			}
@@ -55,12 +77,23 @@ func (e Role) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (roleD
 			}
 			roleData.Records = append(roleData.Records, recordRole)
 		}
+
+		// 存入RoleAll缓存
+		if status != 1 {
+			_ = models.InsertRoleAlls(roleData.Records)
+		}
 	}
+
 	roleData.Current = p.Current
-	roleData.Page = utils.PagesCount(int(role.RoleAllNum()), p.Size)
+	if status == 1 {
+		roleData.Page = utils.PagesCount(len(roleData.Records), p.Size)
+		roleData.Total = len(roleData.Records)
+	} else {
+		roleData.Page = utils.PagesCount(int(role.RoleAllNum()), p.Size)
+		roleData.Total = int(role.RoleAllNum())
+	}
 	roleData.SearchCount = true
 	roleData.Size = p.Size
-	roleData.Total = int(role.RoleAllNum())
 	roleData.HitCount = false
 	roleData.OptimizeCountSql = true
 	for _, value := range orderData {
@@ -72,70 +105,6 @@ func (e Role) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (roleD
 		}
 		roleOrder.Column = value.Column
 		roleData.Orders = append(roleData.Orders, roleOrder)
-	}
-	return
-}
-
-func getDeptsMenus(sysDept []models.SysDept, sysMenu []models.SysMenu) (deptList []bo.Dept, menuList []bo.Menu, err error) {
-	// Dept
-	for _, value := range sysDept {
-		var dept bo.Dept
-		dept.CreateBy = value.CreateBy
-		dept.CreateTime = value.CreateTime
-		dept.DeptSort = value.DeptSort
-		if value.Enabled[0] == 1 {
-			dept.Enabled = true
-		} else {
-			dept.Enabled = false
-		}
-		if value.SubCount > 0 {
-			dept.HasChildren = true
-		} else {
-			dept.HasChildren = false
-		}
-		dept.ID = value.ID
-		dept.Name = value.Name
-		dept.Pid = value.Pid
-		dept.SubCount = value.SubCount
-		dept.UpdateTime = value.UpdateTime
-		dept.UpdateBy = value.UpdateBy
-		deptList = append(deptList, dept)
-	}
-	// Menu
-	for _, value := range sysMenu {
-		var menu bo.Menu
-		menu.CreateBy = value.CreateBy
-		menu.Icon = value.Icon
-		menu.ID = value.ID
-		menu.MenuSort = value.MenuSort
-		menu.Pid = value.Pid
-		menu.SubCount = value.SubCount
-		menu.Type = value.Type
-		menu.UpdateBy = value.UpdateBy
-		menu.Component = value.Component
-		menu.CreateTime = value.CreateTime
-		menu.Name = value.Name
-		menu.Path = value.Path
-		menu.Permission = value.Permission
-		menu.Title = value.Title
-		menu.UpdateTime = value.UpdateTime
-		menu.Label = menu.Title
-		if value.Cache[0] == 1 {
-			menu.Cache = true
-		} else {
-			menu.Cache = false
-		}
-		if value.Hidden[0] == 1 {
-			menu.Hidden = true
-		} else {
-			menu.Hidden = false
-		}
-		if value.IFrame[0] == 1 {
-			menu.Iframe = true
-		} else {
-			menu.Iframe = false
-		}
-		menuList = append(menuList, menu)
 	}
 	return
 }
@@ -152,6 +121,12 @@ func (e Role) InsertRole(p dto.InsertRoleDto, userId int) (err error) {
 	if err = role.InsertRole(p.Depts); err != nil {
 		return
 	}
+
+	// 删除缓存
+	if err = models.DeleteRoleAll(); err != nil {
+		return
+	}
+	err = models.DeleteRoleAlls()
 	return
 }
 
@@ -181,12 +156,17 @@ func (e Role) UpdateRole(p dto.UpdateRoleDto, userId int) (err error) {
 	if err = models.DeleteRoleCache(role.ID); err != nil {
 		return
 	}
+	if err = models.DeleteDeptCache(role.ID); err != nil {
+		return
+	}
 	if err = models.DeleteRoleAll(); err != nil {
 		return
 	}
+	if err = models.DeleteRoleAlls(); err != nil {
+		return
+	}
 	// 更新单个role缓存
-	// TODO
-
+	err = models.InsertRoleId(p.ID)
 	return
 }
 
@@ -206,6 +186,15 @@ func (e Role) UpdateRoleMenu(id int, p []int) (err error) {
 	if err = role.UpdateRoleMenu(id, p); err != nil {
 		return
 	}
+
+	// 删除缓存
+	if err = models.DeleteRoleAll(); err != nil {
+		return
+	}
+	if err = models.DeletMenuCache(id); err != nil {
+		return
+	}
+	err = models.DeleteRoleAlls()
 	return
 }
 
@@ -235,7 +224,7 @@ func (e Role) SelectRoleOne(id int) (roleData bo.RecordRole, err error) {
 	} else {
 		roleData.Protection = false
 	}
-	deptList, menuList, err := getDeptsMenus(sysDept, sysMenu)
+	deptList, menuList, err := role.GetDeptsMenus(sysDept, sysMenu)
 	if err != nil {
 		return
 	}
@@ -273,7 +262,7 @@ func (e Role) SelectRoleLevel(roleName []string) (level bo.SelectCurrentUserLeve
 // 导出角色数据
 func (e Role) DownloadRoleInfoBo(p dto.SelectRoleArrayDto, orderData []bo.Order) (roleData []bo.DownloadRoleInfoBo, err error) {
 	role := new(models.SysRole)
-	sysRole, err := role.SelectRoles(p, orderData)
+	sysRole, _, err := role.SelectRoles(p, orderData)
 	if err != nil {
 		return
 	}

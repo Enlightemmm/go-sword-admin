@@ -1,6 +1,7 @@
 package apis
 
 import (
+	"fmt"
 	"project/app/admin/models"
 	"strconv"
 
@@ -29,6 +30,7 @@ import (
 func InsertMenuHandler(c *gin.Context) {
 	// 1.获取参数 校验参数
 	p := new(dto.InsertMenuDto)
+	flex := new(dto.InsertFlexMenuDto)
 	//获取上下文中信息
 	user, err := api.GetUserMessage(c)
 	if err != nil {
@@ -37,7 +39,6 @@ func InsertMenuHandler(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(p); err != nil {
 		// 请求参数有误， 直接返回响应
-		zap.L().Error("InsertMenuHandler failed", zap.String("username", user.Username), zap.Error(err))
 		c.Error(err)
 		_, ok := err.(validator.ValidationErrors)
 		if !ok {
@@ -48,8 +49,11 @@ func InsertMenuHandler(c *gin.Context) {
 		return
 	}
 	//业务逻辑处理
+	flex.Type, _ = utils.StringToInt(fmt.Sprintf("%v", p.Type))
+	flex.Iframe = utils.StrBoolIntoByte(fmt.Sprintf("%v", p.Iframe))
+	flex.Hidden = utils.StrBoolIntoByte(fmt.Sprintf("%v", p.Hidden))
 	m := new(service.Menu)
-	if err := m.InsertMenu(p, user.UserId); err != nil {
+	if err := m.InsertMenu(p, flex, user.UserId); err != nil {
 		zap.L().Error("insert menu failed", zap.Error(err))
 		app.ResponseError(c, app.CodeInsertOperationFail)
 		return
@@ -224,9 +228,9 @@ func SelectForeNeedMenuHandler(c *gin.Context) {
 // @Tags 系统：菜单管理 Menu Controller
 // @Accept application/json
 // @Produce application/json
-// @Param object body pid false "查询参数"
+// @Param pid query int false "查询参数"
 // @Security ApiKeyAuth
-// @Success 200 {object} models._ReturnToAllMenusBo
+// @Success 200 {object} models._ResponseMenuData
 // @Router /api/menus/lazy [get]
 func ReturnToAllMenusHandler(c *gin.Context) {
 	var pidInt int
@@ -315,14 +319,14 @@ func SuperiorMenuHandler(c *gin.Context) {
 	// 1.获取参数 校验参数
 	p := new(dto.DataMenuDto)
 	//获取上下文中信息
-	user, err := api.GetCurrentUserInfo(c)
+	user, err := api.GetUserMessage(c)
 	if err != nil {
 		zap.L().Error("GetCurrentUserInfo failed", zap.Error(err))
 		return
 	}
 	if err := c.ShouldBindJSON(p); err != nil {
 		// 请求参数有误， 直接返回响应
-		zap.L().Error("InsertMenuHandler failed", zap.String("username", user.UserName), zap.Error(err))
+		zap.L().Error("InsertMenuHandler failed", zap.String("username", user.Username), zap.Error(err))
 		c.Error(err)
 		_, ok := err.(validator.ValidationErrors)
 		if !ok {
@@ -359,7 +363,7 @@ func ChildMenuHandler(c *gin.Context) {
 	// 1.获取参数 校验参数
 	p := c.Query("id")
 	//获取上下文中信息
-	user, err := api.GetCurrentUserInfo(c)
+	user, err := api.GetUserMessage(c)
 	if err != nil {
 		zap.L().Error("GetCurrentUserInfo failed", zap.Error(err))
 		return
@@ -367,7 +371,7 @@ func ChildMenuHandler(c *gin.Context) {
 	atoi, err := strconv.Atoi(p)
 	if err != nil || atoi < 0 {
 		// 请求参数有误， 直接返回响应
-		zap.L().Error("ChildMenuHandler failed", zap.String("username", user.UserName), zap.Error(err))
+		zap.L().Error("ChildMenuHandler failed", zap.String("username", user.Username), zap.Error(err))
 		app.ResponseError(c, app.CodeParamIsInvalid)
 		return
 	}

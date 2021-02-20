@@ -10,7 +10,7 @@ type SelectDeptDto struct {
 	Enabled   bool   `form:"enabled"`   // 状态：1启用（默认）、0禁用
 	Orders    string `form:"orders"`    // 排序规则
 	Name      string `form:"name"`      // 模糊
-	Sort      string `form:"sort"`
+	Sort      string `form:"sort"`      // id排序
 }
 
 // InsertDeptDto 新增部门
@@ -26,11 +26,11 @@ type InsertDeptDto struct {
 // UpdateDeptDto 更新部门
 type UpdateDeptDto struct {
 	Pid         *int   `json:"pid" binding:"required"`      // 上级部门id
-	SubCount    *int   `json:"subCount" binding:"required"` // 子部门个数
 	DeptSort    *int   `json:"deptSort" binding:"required"` // 部门排序
 	ID          int    `json:"id" binding:"required"`       // 部门id
+	SubCount    int    `json:"subCount"`                    // 子部门个数
 	CreateBy    int    `json:"createBy"`
-	UpdatedBy   int    `json:"updateBy"`
+	UpdateBy    int    `json:"updateBy"`
 	CreateTime  int64  `json:"creatTime"`
 	UpdateTime  int64  `json:"updateTime"`
 	HasChildren bool   `json:"hasChildren"`                //是否有子节点

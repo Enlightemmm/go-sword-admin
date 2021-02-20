@@ -7,21 +7,30 @@ import (
 	"reflect"
 	"strconv"
 
+	"go.uber.org/zap"
+
 	orm "project/common/global"
 )
 
 type SysRole struct {
 	ID           int    `gorm:"primary_key" json:"id"`                  //ID
-	Name         string `json:"name"`                                   //角色名称
 	Level        int    `json:"level"`                                  //角色级别（越小越大）
-	Description  string `json:"description"`                            //描述
-	DataScope    string `json:"data_scope"`                             //数据权限
-	IsProtection []byte `json:"is_protection" gorm:"default:[]byte{0}"` //是否受保护（内置角色，1为内置角色，默认值为0）
 	CreateBy     int    `json:"create_by" gorm:"autoCreateTime:milli"`  //创建者id
 	UpdateBy     int    `json:"update_by" gorm:"autoCreateTime:milli"`  //更新者id
 	CreateTime   int64  `json:"create_time"`                            //创建日期
 	UpdateTime   int64  `json:"update_time"`                            //更新时间
-	IsDeleted    []byte `json:"is_deleted"`                             //软删除（默认值为0，1为删除）
+	IsProtection []byte `json:"is_protection" gorm:"default:[]byte{0}"` //是否受保护（内置角色，1为内置角色，默认值为0）
+	IsDeleted    []byte `json:"is_deleted"`                             //软删除（默认值为0，1为删除)
+	Name         string `json:"name"`                                   //角色名称
+	Description  string `json:"description"`                            //描述
+	DataScope    string `json:"data_scope"`                             //数据权限
+	//Address      string `json:"address"`                                //路由
+	//Action       string `json:"action"`                                 //请求方法
+}
+
+type AddressAction struct {
+	Address string //路由
+	Action  string //请求方法
 }
 
 func (e SysRole) RoleAllNum() (num int64) {
@@ -32,7 +41,7 @@ func (e SysRole) RoleAllNum() (num int64) {
 }
 
 // 多条件查询角色
-func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sysRole []SysRole, err error) {
+func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sysRole []SysRole, status int, err error) {
 	var order string
 	for key, value := range orderData {
 		order += value.Column + " "
@@ -54,6 +63,7 @@ func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sy
 	// 查询
 	if p.Blurry != "" && p.StartTime == "" {
 		// 查询Blurry
+		status = 1
 		err = orm.Eloquent.Where("name like ? or description like ? and is_deleted=0",
 			"%"+p.Blurry+"%", "%"+p.Blurry+"%").
 			Limit(p.Size).Offset((p.Current - 1) * p.Size).Order(order).Find(&sysRole).Error
@@ -61,6 +71,7 @@ func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sy
 	}
 	if p.Blurry == "" && p.StartTime != "" {
 		// 查询Time
+		status = 1
 		startTime, err1 := strconv.ParseInt(p.StartTime, 10, 64)
 		if err1 != nil {
 			err = err1
@@ -77,6 +88,7 @@ func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sy
 	}
 	if p.Blurry != "" && p.StartTime != "" {
 		// 查询All
+		status = 1
 		startTime, err1 := strconv.ParseInt(p.StartTime, 10, 64)
 		if err1 != nil {
 			err = err1
@@ -92,7 +104,33 @@ func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sy
 			Limit(p.Size).Offset((p.Current - 1) * p.Size).Order(order).Find(&sysRole).Error
 		return
 	}
-	if err = orm.Eloquent.Where("is_deleted=0").Limit(p.Size).Offset((p.Current - 1) * p.Size).Order(order).Find(&sysRole).Error; err != nil {
+
+	//  2.查找mysql
+	// 带分页
+	//if err = orm.Eloquent.Where("is_deleted=0").Limit(p.Size).Offset((p.Current - 1) * p.Size).Order(order).Find(&sysRole).Error; err != nil {
+	//	return
+	//}
+	if err = orm.Eloquent.Where("is_deleted=0").Order(order).Find(&sysRole).Error; err != nil {
+		return
+	}
+	return
+}
+
+// 查询Dept
+func (e SysRole) SysDeptSelect(id int) (sysDept []SysDept, err error) {
+	// 查询Dept
+	if err = orm.Eloquent.Where("id = any(?)", orm.Eloquent.Table("sys_roles_depts").Select("dept_id").
+		Where("role_id = ?", id)).Find(&sysDept).Error; err != nil {
+		return
+	}
+	return
+}
+
+// 查询Menu
+func (e SysRole) SysMenuSelect(id int) (sysMenu []SysMenu, err error) {
+	// 查询Menu
+	if err = orm.Eloquent.Where("id = any(?)", orm.Eloquent.Table("sys_roles_menus").Select("menu_id").
+		Where("role_id = ?", id)).Find(&sysMenu).Error; err != nil {
 		return
 	}
 	return
@@ -100,16 +138,11 @@ func (e SysRole) SelectRoles(p dto.SelectRoleArrayDto, orderData []bo.Order) (sy
 
 // 查询Dept Menu
 func (e SysRole) SysDeptAndMenu(id int) (sysDept []SysDept, sysMenu []SysMenu, err error) {
-	// 查询Dept
-	if err = orm.Eloquent.Where("id = any(?)", orm.Eloquent.Table("sys_roles_depts").Select("dept_id").
-		Where("role_id = ?", id)).Find(&sysDept).Error; err != nil {
+	sysDept, err = e.SysDeptSelect(id)
+	if err != nil {
 		return
 	}
-	// 查询Menu
-	if err = orm.Eloquent.Where("id = any(?)", orm.Eloquent.Table("sys_roles_menus").Select("menu_id").
-		Where("role_id = ?", id)).Find(&sysMenu).Error; err != nil {
-		return
-	}
+	sysMenu, err = e.SysMenuSelect(id)
 	return
 }
 
@@ -135,6 +168,9 @@ func (e SysRole) InsertRole(deptsData []int) (err error) {
 		}
 	}
 	tx.Commit()
+
+	// 更新单个role缓存
+	err = InsertRoleId(e.ID)
 	return
 }
 
@@ -167,13 +203,33 @@ func (e SysRole) UpdateRole(deptsData []int, menusData []int) (err error) {
 
 // 删除角色
 func (e SysRole) DeleteRole(p []int) (err error) {
+	tx := orm.Eloquent.Begin()
 	for _, values := range p {
-		err = orm.Eloquent.Table("sys_role").Where("id = ?", values).Updates(SysRole{UpdateBy: e.ID, IsDeleted: []byte{1}}).Error
+		err = tx.Table("sys_role").Where("id = ?", values).Updates(SysRole{UpdateBy: e.ID, IsDeleted: []byte{1}}).Error
 		if err != nil {
+			zap.L().Error("deleteRole failed", zap.Error(err))
+			tx.Rollback()
 			return
+		}
+		//删除策略
+		err = DeletePolicyByRoleId(utils.IntToString(values))
+		if err != nil {
+			zap.L().Error("DeletePolicyByRoleId failed", zap.Error(err))
+			tx.Rollback()
+			return err
+		}
+		err = tx.Commit().Error
+		if err != nil {
+			return err
 		}
 		// 删除缓存
 		if err = DeleteRoleCache(values); err != nil {
+			return
+		}
+		if err = DeleteDeptCache(values); err != nil {
+			return
+		}
+		if err = DeletMenuCache(values); err != nil {
 			return
 		}
 	}
@@ -181,12 +237,14 @@ func (e SysRole) DeleteRole(p []int) (err error) {
 	if err = DeleteRoleAll(); err != nil {
 		return
 	}
+	err = DeleteRoleAlls()
 	return
 }
 
 // 修改角色菜单
 func (e SysRole) UpdateRoleMenu(id int, p []int) (err error) {
 	tx := orm.Eloquent.Begin()
+	//修改菜单
 	var sysRoleMenus SysRolesMenus
 	tx.Where("role_id = ?", id).Delete(&sysRoleMenus)
 	for _, menuID := range p {
@@ -198,6 +256,34 @@ func (e SysRole) UpdateRoleMenu(id int, p []int) (err error) {
 			tx.Rollback()
 			return results.Error
 		}
+	}
+
+	//删除原有策略
+	idStr := utils.IntToString(id)
+	err = DeletePolicyByRoleId(idStr)
+	if err != nil {
+		zap.L().Error("DeletePolicyByRoleId failed", zap.Error(err))
+		tx.Rollback()
+		return err
+	}
+
+	//更新策略
+	newPolicys := make([][]string, 0, 0)
+	a := []int{2}
+	for _, menuId := range a {
+		addressAction := new(AddressAction)
+		err = tx.Table("sys_menu").Where("id=?", menuId).Find(addressAction).Error
+		if err != nil {
+			zap.L().Error("Select addressAction failed", zap.Error(err))
+			tx.Rollback()
+			return err
+		}
+		newPolicys = append(newPolicys, []string{idStr, addressAction.Address, addressAction.Action})
+	}
+	_, err = orm.CasbinEnforcer.AddPolicies(newPolicys)
+	if err != nil {
+		zap.L().Error("AddPolicies failed", zap.Error(err))
+		tx.Rollback()
 	}
 	tx.Commit()
 	return
@@ -212,7 +298,7 @@ func (e SysRole) SelectRoleOne() (role SysRole, err error) {
 // 查询所有角色
 func (e SysRole) SelectRoleAll() (roleAll []bo.RecordRole, err error) {
 	var sysRoleAll []SysRole
-	if err = orm.Eloquent.Find(&sysRoleAll).Error; err != nil {
+	if err = orm.Eloquent.Where("is_deleted=0").Find(&sysRoleAll).Error; err != nil {
 		return
 	}
 	for _, roleID := range sysRoleAll {
@@ -302,4 +388,97 @@ func (e SysRole) SelectRoleLevel(roleName []string) (level bo.SelectCurrentUserL
 		level.Level = 1
 	}
 	return
+}
+
+func (e SysRole) GetDepts(sysDept []SysDept) (deptList []bo.Dept, err error) {
+	// Dept
+	for _, value := range sysDept {
+		var dept bo.Dept
+		dept.CreateBy = value.CreateBy
+		dept.CreateTime = value.CreateTime
+		dept.DeptSort = value.DeptSort
+		if value.Enabled[0] == 1 {
+			dept.Enabled = true
+		} else {
+			dept.Enabled = false
+		}
+		if value.SubCount > 0 {
+			dept.HasChildren = true
+		} else {
+			dept.HasChildren = false
+		}
+		dept.ID = value.ID
+		dept.Name = value.Name
+		dept.Pid = value.Pid
+		dept.SubCount = value.SubCount
+		dept.UpdateTime = value.UpdateTime
+		dept.UpdateBy = value.UpdateBy
+		deptList = append(deptList, dept)
+	}
+	return
+}
+
+func (e SysRole) GetMenus(sysMenu []SysMenu) (menuList []bo.Menu, err error) {
+	// Menu
+	for _, value := range sysMenu {
+		var menu bo.Menu
+		menu.CreateBy = value.CreateBy
+		menu.Icon = value.Icon
+		menu.ID = value.ID
+		menu.MenuSort = value.MenuSort
+		menu.Pid = value.Pid
+		menu.SubCount = value.SubCount
+		menu.Type = value.Type
+		menu.UpdateBy = value.UpdateBy
+		menu.Component = value.Component
+		menu.CreateTime = value.CreateTime
+		menu.Name = value.Name
+		menu.Path = value.Path
+		menu.Permission = value.Permission
+		menu.Title = value.Title
+		menu.UpdateTime = value.UpdateTime
+		menu.Label = menu.Title
+		if value.Cache[0] == 1 {
+			menu.Cache = true
+		} else {
+			menu.Cache = false
+		}
+		if value.Hidden[0] == 1 {
+			menu.Hidden = true
+		} else {
+			menu.Hidden = false
+		}
+		if value.IFrame[0] == 1 {
+			menu.Iframe = true
+		} else {
+			menu.Iframe = false
+		}
+		menuList = append(menuList, menu)
+	}
+	return
+}
+
+func (e SysRole) GetDeptsMenus(sysDept []SysDept, sysMenu []SysMenu) (deptList []bo.Dept, menuList []bo.Menu, err error) {
+	// Dept
+	deptList, err = e.GetDepts(sysDept)
+	if err != nil {
+		return
+	}
+	// Menu
+	menuList, err = e.GetMenus(sysMenu)
+	return
+}
+
+func DeletePolicyByRoleId(roleID string) (err error) {
+	//1查询策略
+	oldPolicys := orm.CasbinEnforcer.GetFilteredPolicy(0, roleID)
+	if oldPolicys != nil && len(oldPolicys) != 0 {
+		//2删除策略
+		_, err = orm.CasbinEnforcer.RemovePolicies(oldPolicys)
+		if err != nil {
+			zap.L().Error("RemovePolicies failed", zap.Error(err))
+			return err
+		}
+	}
+	return nil
 }
