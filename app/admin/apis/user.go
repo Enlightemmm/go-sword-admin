@@ -3,7 +3,6 @@ package apis
 import (
 	"errors"
 	"fmt"
-
 	"project/app/admin/models"
 	"project/app/admin/models/bo"
 	"project/app/admin/models/dto"
@@ -15,11 +14,15 @@ import (
 	"project/utils/app"
 	"project/utils/config"
 
+	"github.com/mojocn/base64Captcha"
+
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+var store = base64Captcha.DefaultMemStore
 
 // LoginHandler 登录授权接口
 // @Summary 登录授权接口
@@ -46,9 +49,13 @@ func LoginHandler(c *gin.Context) {
 		return
 	}
 
+	//校验验证码
+	if !store.Verify(p.UuId, p.Code, true) {
+		app.ResponseError(c, app.CodeLoginFailCode)
+		return
+	}
+
 	// 2.业务逻辑处理
-	//TODO 方便postman测试 (模拟前端数据)
-	//p.Password, _ = utils.RsaPubEncode(p.Password)
 	value, err := utils.RsaPriDecode(p.Password)
 	if err != nil {
 		zap.L().Error("ras decode fail", zap.Error(err))
@@ -131,6 +138,11 @@ func InsertUserHandler(c *gin.Context) {
 	//业务逻辑处理
 	u := new(service.User)
 	if err := u.InsertUser(p, user.UserId); err != nil {
+		if errors.Is(err, models.ErrorUserIsExist) {
+			zap.L().Error("insert menu failed", zap.Error(err))
+			app.ResponseErrorWithMsg(c, app.CodeInsertOperationFail, "用户已存在")
+			return
+		}
 		zap.L().Error("insert menu failed", zap.Error(err))
 		app.ResponseError(c, app.CodeInsertOperationFail)
 		return

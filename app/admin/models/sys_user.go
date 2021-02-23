@@ -2,6 +2,7 @@ package models
 
 import (
 	"errors"
+	"fmt"
 	"project/app/admin/models/bo"
 	"project/app/admin/models/cache"
 	"project/app/admin/models/dto"
@@ -72,15 +73,6 @@ type SysUser struct {
 	UpdateBy     int    `json:"update_by"`      //
 }
 
-//redis 缓存model
-// TODO 需要删除
-type RedisUserInfo struct {
-	UserId   int      `json:"user_id"`
-	UserName string   `json:"user_name"`
-	Role     []string `json:"role"`
-	DeptId   int      `json:"dept_id"` //部门id
-}
-
 // OnlineUser 用户线上数据
 type OnlineUser struct {
 	LoginTime     int64  `json:"loginTime"`     //登录时间
@@ -116,6 +108,7 @@ var (
 	ErrorInvalidPassword  = errors.New("用户名或密码错误")
 	ErrorServerBusy       = errors.New("服务器繁忙")
 	ErrorUserIsNotEnabled = errors.New("用户未激活")
+	ErrorUserIsExist      = errors.New("用户已存在")
 )
 
 func (a *Admin) GetIsAdmin(userId int) error {
@@ -149,6 +142,12 @@ func (u *SysUser) Login() error {
 }
 
 func (u *SysUser) InsertUser(jobs []int, roles []int) (err error) {
+	var num int64
+	global.Eloquent.Table("sys_user").Where("username=?", u.Username).Count(&num)
+	if num != 0 {
+		zap.L().Info(fmt.Sprintf("%d", num))
+		return ErrorUserIsExist
+	}
 	//创建事务
 	tx := global.Eloquent.Begin()
 	//用户表 增添
@@ -209,22 +208,25 @@ func (u *SysUser) SelectUserInfoList(p *dto.SelectUserInfoArrayDto, currentUser 
 		var total int
 		total = len(userRecords)
 		start := p.Size * (p.Current - 1)
-		end := p.Size*(p.Current-1) + p.Size - 1
-		if end > total {
-			end = total
+		end := start + p.Size - 1
+		zap.L().Info(fmt.Sprintf("%s%d", "11111     ", total))
+		zap.L().Info(fmt.Sprintf("%d        %d", start, end))
+		records := make([]*bo.RecordUser, 0, 0)
+		if end >= total-1 {
+			records = userRecords[start:]
+		} else if len(userRecords) != 0 {
+			records = userRecords[start:end]
 		}
-		records := userRecords[start:end]
 		//查询页数
-
 		data = &bo.UserInfoListBo{Records: records}
 		data.Orders = orderJson
 		data.Size = p.Size
 		data.Current = p.Current
 		data.Pages = (total + p.Size - 1) / p.Size
-		data.Total = int(total)
+		data.Total = total
 		data.SearchCount = true
 		data.OptimizeCountSql = true
-		if records != nil && total >= 0 {
+		if records != nil && total > 0 {
 			return data, nil
 		}
 	}
@@ -245,9 +247,9 @@ func (u *SysUser) SelectUserInfoList(p *dto.SelectUserInfoArrayDto, currentUser 
 		table = table.Where("create_time > ? AND create_time < ?", p.StartTime, p.EndTime)
 	}
 
-	//分页 排序
+	//排序
 	var total int64
-	err = table.Limit(p.Size).Offset(p.Current - 1*p.Size).Count(&total).Order(orderRule).Find(&usersHalf).Error
+	err = table.Count(&total).Order(orderRule).Find(&usersHalf).Error
 	pages := (int(total) + p.Size - 1) / p.Size
 	if err != nil {
 		return nil, err
@@ -312,6 +314,7 @@ func (u *SysUser) SelectUserInfoList(p *dto.SelectUserInfoArrayDto, currentUser 
 		users = append(users, user)
 	}
 
+	zap.L().Info("set ok")
 	//设置records缓存
 	if p.StartTime == 0 && p.EndTime == 0 && p.Blurry == "" {
 		zap.L().Info("set ok")
@@ -320,8 +323,17 @@ func (u *SysUser) SelectUserInfoList(p *dto.SelectUserInfoArrayDto, currentUser 
 			zap.L().Error("SetUserRecordsCache failed", zap.Error(err))
 		}
 	}
+	start := p.Size * (p.Current - 1)
+	end := start + p.Size - 1
+	if end > int(total) {
+		end = int(total) - 1
+	}
+	records := make([]*bo.RecordUser, 0, 0)
+	if len(users) != 0 {
+		records = users[start:end]
+	}
 
-	data = &bo.UserInfoListBo{Records: users}
+	data = &bo.UserInfoListBo{Records: records}
 	data.Orders = orderJson
 	data.Size = p.Size
 	data.Current = p.Current
@@ -371,6 +383,7 @@ func GetUserJob(jobs *[]SysJob, userId int) (err error) {
 func GetUserRole(role *[]SysRole, userId int) (err error) {
 	//连表查询角色
 	err = global.Eloquent.Table("sys_role").
+		Select("sys_role.id, sys_role.level, sys_role.create_by, sys_role.update_by, sys_role.create_time, sys_role.update_time, sys_role.is_protection, sys_role.is_deleted, sys_role.name, sys_role.description, sys_role.data_scope").
 		Joins("left join sys_users_roles on sys_users_roles.role_id = sys_role.id").
 		Joins("left join sys_user on sys_user.id = sys_users_roles.user_id").
 		Where("sys_role.is_deleted=? and sys_user.id=?", []byte{0}, userId).
@@ -389,6 +402,7 @@ func GetUserRole(role *[]SysRole, userId int) (err error) {
 func SelectUserJob(userId int) (jobs []*bo.Job, err error) {
 	//连表查询岗位
 	err = global.Eloquent.Table("sys_job").
+		Select("sys_job.id, sys_job.name").
 		Joins("left join sys_users_jobs on sys_users_jobs.job_id = sys_job.id").
 		Joins("left join sys_user on sys_user.id = sys_users_jobs.user_id").
 		Where("sys_job.is_deleted=? and sys_user.id=?", []byte{0}, userId).
@@ -407,6 +421,7 @@ func SelectUserJob(userId int) (jobs []*bo.Job, err error) {
 // SelectUserDept 查询部门
 func SelectUserDept(dept *SysDept, userId int) (err error) {
 	err = global.Eloquent.Table("sys_dept").
+		Select("sys_dept.name, sys_dept.pid, sys_dept.sub_count, sys_dept.dept_sort, sys_dept.create_by, sys_dept.update_by, sys_dept.enabled, sys_dept.id, sys_dept.is_deleted, sys_dept.create_time, sys_dept.update_time").
 		Joins("left join sys_user on sys_user.dept_id = sys_dept.id").
 		Where("sys_user.id=? AND sys_dept.is_deleted=?", userId, []byte{0}).
 		Scan(dept).Error
@@ -426,8 +441,8 @@ func SelectUserMenuPermission(menus *[]SysMenu, roles *[]SysRole) (err error) {
 	for _, role := range *roles {
 		rolesId = append(rolesId, role.ID)
 	}
-	err = global.Eloquent.Table("sys_roles_menus").
-		Joins("left join sys_menu on sys_roles_menus.menu_id = sys_menu.id").
+	err = global.Eloquent.Table("sys_menu").
+		Joins("left join sys_roles_menus on sys_roles_menus.menu_id = sys_menu.id").
 		Where("sys_roles_menus.role_id in (?)", rolesId).Find(menus).Error
 	return
 }
@@ -462,7 +477,7 @@ func (u *SysUser) UpdateUser(p *dto.UpdateUserDto, optionId int) (err error) {
 	tx := global.Eloquent.Begin()
 	//校验用户是否存在
 	test := new(SysUser)
-	err = tx.Table("sys_user").Where("id=? AND is_delete=?", p.ID, []byte{0}).First(test).Error
+	err = tx.Table("sys_user").Where("id=? AND is_deleted=?", p.ID, []byte{0}).First(test).Error
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -679,7 +694,7 @@ func (u *SysUser) UserDownload(p *dto.DownloadUserInfoDto) (data *bo.UserInfoLis
 	var usersHalf []*bo.RecordUserHalf
 	//分页
 	var total int64
-	err = global.Eloquent.Limit(p.Size).Offset(p.Current - 1*p.Size).Count(&total).Order(orderRule).Find(&usersHalf).Error
+	err = global.Eloquent.Table("sys_user").Limit(p.Size).Offset(p.Current - 1*p.Size).Count(&total).Order(orderRule).Find(&usersHalf).Error
 	pages := (int(total) + p.Size - 1) / p.Size
 	if err != nil {
 		return nil, err

@@ -23,6 +23,8 @@ type InsertMenuDto struct {
 	Path       string      `json:"path"`
 	Permission string      `json:"permission"`
 	Title      string      `json:"title"`
+	Address    string      `json:"address"`
+	Action     string      `json:"action"`
 	Roles      []int       `json:"roles"`
 	Hidden     interface{} `json:"hidden"`
 	Iframe     interface{} `json:"iframe"`
@@ -49,10 +51,10 @@ type UpdateMenuDto struct {
 	Pid         int    `json:"pid"`
 	Type        int    `json:"type"`
 	CreateBy    int    `json:"creatBy"`
-	UpdateTime  int64  `json:"updateTime" binding:"required"`
-	CreateTime  int64  `json:"creatTime"`
+	UpdateTime  string `json:"updateTime" binding:"required"`
+	CreateTime  string `json:"creatTime"`
 	Icon        string `json:"icon" binding:"required"`
-	Label       string `json:"label" binding:"required"`
+	Label       string `json:"label"`
 	Children    string `json:"children"`
 	Component   string `json:"component"`
 	Name        string `json:"name"`
@@ -97,5 +99,5 @@ type SelectCurrentLevelAndUpLevelInfo struct {
 
 //DataMenuDto 同级上级菜单数据获取
 type DataMenuDto struct {
-	Ids []int `json:"ids" binding:"required"`
+	//int[] 接受即可 id列表`
 }

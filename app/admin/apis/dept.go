@@ -22,7 +22,7 @@ var d = new(service.Dept)
 // @Tags 系统：部门管理 Dept Controller
 // @Accept application/json
 // @Produce application/json
-// @Param object body dto.SelectDeptDto false "查询参数"
+// @Param object query dto.SelectDeptDto false "查询参数"
 // @Security ApiKeyAuth
 // @Success 200 {object} models._ResponseSelectDeptList
 // @Router /api/dept [get]
@@ -120,10 +120,14 @@ func InsertDeptHandler(c *gin.Context) {
 	}
 
 	// 参数正确执行相应业务
-	err = d.InsertDept(dept, user.UserId)
+	count, err := d.InsertDept(dept, user.UserId)
 	if err != nil {
 		zap.L().Error("InsertDeptDao Insert failed", zap.String("Username", user.Username), zap.Error(err))
 		app.ResponseError(c, app.CodeSelectOperationFail)
+		return
+	}
+	if count > 0 {
+		app.ResponseErrorWithMsg(c, app.CodeUpdateOperationFail, "部门已存在，不能重复添加")
 		return
 	}
 
@@ -164,9 +168,14 @@ func UpdateDeptHandler(c *gin.Context) {
 	// 替换更新者
 	dept.UpdateBy = user.UserId
 	// 业务处理
-	if err := d.UpdateDept(dept); err != nil {
+	count, err := d.UpdateDept(dept)
+	if err != nil {
 		zap.L().Error("UpdateDeptHandler UpdateSQL failed", zap.Error(err))
-		app.ResponseError(c, app.CodeDeleteOperationFail)
+		app.ResponseError(c, app.CodeUpdateOperationFail)
+		return
+	}
+	if count > 0 {
+		app.ResponseErrorWithMsg(c, app.CodeUpdateOperationFail, "部门已存在，不能更改")
 		return
 	}
 	app.ResponseSuccess(c, nil)
@@ -181,7 +190,7 @@ func UpdateDeptHandler(c *gin.Context) {
 // @Param object body []int false "查询参数"
 // @Security ApiKeyAuth
 // @Success 200 {object} models._ResponseDept
-// @Router /api/menus [delete]
+// @Router /api/dept [delete]
 func DeleteDeptHandle(c *gin.Context) {
 	//获取上下文中信息
 	user, err := api.GetUserMessage(c)

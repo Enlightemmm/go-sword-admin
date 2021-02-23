@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"project/common/global"
 	"strconv"
 )
@@ -37,7 +38,7 @@ func SetMenuCache(allMenu map[string][]byte) error {
 	return nil
 }
 
-//查询所有菜单bo缓存
+//设置菜单bo缓存
 func SetMenuListCache(v []byte, pid int) error {
 	return global.Rdb.Set("menu::pid:"+strconv.Itoa(pid), v, 0).Err()
 }
@@ -45,6 +46,16 @@ func SetMenuListCache(v []byte, pid int) error {
 //查询所有菜单bo缓存
 func GetMenuListCache(k string) ([]byte, error) {
 	return global.Rdb.Get(k).Bytes()
+}
+
+//删除菜单bo缓存
+func DelMenuListCache(pIDs []int) error {
+	pipeline := global.Rdb.Pipeline()
+	for _, pid := range pIDs {
+		pipeline.Del("menu::pid:" + strconv.Itoa(pid))
+	}
+	_, err := pipeline.Exec()
+	return err
 }
 
 //根据id查询缓存
@@ -74,7 +85,13 @@ func DeleteAllMenuIdCache() error {
 	return err
 }
 
-func DeleteAllUserMenuCache(keys []string) error {
+func DeleteUserNeedMenuCacheById(id int) error {
+	key := fmt.Sprintf("%s%d", "menu::userNeed:", id)
+	return global.Rdb.Del(key).Err()
+}
+
+func DeleteAllUserNeedMenuCache() error {
+	keys := global.Rdb.Keys("menu::userNeed:" + "*").Val()
 	pipLine := global.Rdb.Pipeline()
 	for _, key := range keys {
 		pipLine.Del(key)
