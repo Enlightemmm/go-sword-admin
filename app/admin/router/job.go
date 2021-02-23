@@ -31,6 +31,5 @@ func jobAuthRouter(v1 *gin.RouterGroup) {
 		r.POST("", apis.AddJob)
 		r.PUT("", apis.UpdateJob)
 		r.GET("download", apis.JobDownload)
-
 	}
 }

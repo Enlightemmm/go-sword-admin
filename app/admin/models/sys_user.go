@@ -112,6 +112,7 @@ var (
 )
 
 func (a *Admin) GetIsAdmin(userId int) error {
+	// 返回这个人是不是管理者
 	return global.Eloquent.Table("sys_user").Where("id = ?", userId).First(a).Error
 }
 
@@ -364,11 +365,13 @@ func SelectUserRole(userId int) (role []*bo.Role, err error) {
 
 func GetUserJob(jobs *[]SysJob, userId int) (err error) {
 	//连表查询岗位
+	// 三表联查，把查询到的数据放到jobs这个结构体中
 	err = global.Eloquent.Table("sys_job").
 		Joins("left join sys_users_jobs on sys_users_jobs.job_id = sys_job.id").
 		Joins("left join sys_user on sys_user.id = sys_users_jobs.user_id").
 		Where("sys_job.is_deleted=? and sys_user.id=?", []byte{0}, userId).
 		Find(jobs).Error
+	// 对错误进行判断，这里分了两种
 	if err == gorm.ErrRecordNotFound {
 		zap.L().Error("用户无岗位", zap.Error(err))
 		return ErrorUserNotExist
@@ -420,6 +423,7 @@ func SelectUserJob(userId int) (jobs []*bo.Job, err error) {
 
 // SelectUserDept 查询部门
 func SelectUserDept(dept *SysDept, userId int) (err error) {
+	// 将查询到的数据存储到dept中
 	err = global.Eloquent.Table("sys_dept").
 		Select("sys_dept.name, sys_dept.pid, sys_dept.sub_count, sys_dept.dept_sort, sys_dept.create_by, sys_dept.update_by, sys_dept.enabled, sys_dept.id, sys_dept.is_deleted, sys_dept.create_time, sys_dept.update_time").
 		Joins("left join sys_user on sys_user.dept_id = sys_dept.id").

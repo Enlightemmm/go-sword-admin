@@ -135,13 +135,16 @@ func (u *User) Login(c *gin.Context, p *dto.UserLoginDto) (data *bo.LoginData, e
 // GetUserJobData 获取用户岗位数据
 func GetUserJobData(cacheJob string, jobErr error, jobs *[]models.SysJob, userId int) (err error) {
 	if jobErr != nil {
+		// 这个错误是查询缓存时捎带的，如果出现错误则去数据库查询
 		err = models.GetUserJob(jobs, userId)
 		if err != nil {
 			return
 		}
+		// 将从数据库查询到的信息通过一个goroutine存到redis中
 		go cache.SetUserCache(userId, jobs, cache.KeyUserJob)
 
 	} else {
+		// 将从redis中取出的string类型的数据转为struct类型
 		err = utils.JsonToStruct(cacheJob, jobs)
 	}
 	return
@@ -150,27 +153,35 @@ func GetUserJobData(cacheJob string, jobErr error, jobs *[]models.SysJob, userId
 // GetUserRoleData 获取用户角色数据
 func GetUserRoleData(cacheRole string, rolesErr error, roles *[]models.SysRole, userId int) (err error) {
 	if rolesErr != nil {
+		// 如果查询redis时出现错误（包括没有查找到）则从数据库取出数据
 		err = models.GetUserRole(roles, userId)
 		if err != nil {
 			return
 		}
+		// 开启一个goroutine将数据存到redis里
 		go cache.SetUserCache(userId, roles, cache.KeyUserRole)
 	} else {
+		// 如果没有出错则将从redis中获取到的string转换成struct
 		err = utils.JsonToStruct(cacheRole, roles)
 	}
 	return
 }
 
-// GetUserMenuData 获取用户菜单权限
+// GetUserMenuData
 func GetUserMenuData(cacheMenu string, menuErr error, userId int, menuPermission *[]string, roles *[]models.SysRole) (err error) {
 	*menuPermission = []string{}
 	if menuErr != nil {
+		// 如果从redis拿的时候有错误，则先初始化下面这个结构体（判断是否是管理者）
 		a := new(models.Admin)
+		// 因为redis中没有所以要来mysql中查询
 		if err = a.GetIsAdmin(userId); err != nil {
 			return
 		}
+		// 先将其转为int型
+		// 如果是则在最终的结构体中存入admin
 		if utils.ByteIntoInt(a.IsAdmin) == 1 {
 			*menuPermission = []string{`admin`}
+			// 同时起一个goroutine将用户id，是否管理和key传入
 			go cache.SetUserCache(userId, menuPermission, cache.KeyUserMenu)
 		} else {
 			menus := new([]models.SysMenu)
@@ -205,10 +216,12 @@ func GetUserMenuData(cacheMenu string, menuErr error, userId int, menuPermission
 // GetUserDeptData 获取用户部门数据
 func GetUserDeptData(cacheDept string, deptErr error, dept *models.SysDept, userId int) (err error) {
 	if deptErr != nil {
+		// 如果从redis中查的时候没有查找则到mysql中查询
 		err = models.SelectUserDept(dept, userId)
 		if err != nil {
 			return
 		}
+		// 开一个goroutine将信息存入redis
 		go cache.SetUserCache(userId, dept, cache.KeyUserDept)
 	} else {
 		err = utils.JsonToStruct(cacheDept, dept)
@@ -218,18 +231,28 @@ func GetUserDeptData(cacheDept string, deptErr error, dept *models.SysDept, user
 
 // GetUserDataScopes 获取用户数据权限
 func GetUserDataScopes(cacheDataScopes string, dataScopesErr error, dataScopes *[]int, userId int, deptId int, roles *[]models.SysRole) (err error) {
+	// 如果在redis中没有查找到
 	if dataScopesErr != nil {
+		// 定义一个[]int
 		var dataScopesRoleIds []int
+		// 声明的时候为默认值false
 		var allScopes bool
+		// 遍历从redis或mysql中获取到的[]models.SysRole，取出每一项
+		// 从这里可以看出struct也是可以遍历的
 		for _, role := range *roles {
+			// 这里只判断其中的DataScope
 			switch role.DataScope {
 			case `全部`:
+				// 如果data_scope字段为全部，则allScopes为true
 				allScopes = true
+
 				*dataScopes = []int{}
 				break
 			case `本级`:
+				// 如果是本级则将部门id存入该切片
 				*dataScopes = append(*dataScopes, deptId)
 			default:
+				// 如果是其他则将用户id存入该切片
 				dataScopesRoleIds = append(dataScopesRoleIds, role.ID)
 			}
 		}

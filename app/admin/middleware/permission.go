@@ -12,19 +12,27 @@ import (
 //权限检查中间件
 func AuthCheckRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// 这个结构体包含了一个用户所有信息
 		data := new(api.UserInfo)
+		// 定义一个string类型的切片用来保存用户的所有角色
 		var role []string
 		var err error
+		// 获取到用户的所有信息：先去缓存中查，如果存在则将其从string转为struct，要不就去数据库中查找
 		userInfo, err := api.GetUserData(c)
+		// 将userInfo的值赋给data
 		data = userInfo
+		// 只取出该用户的角色信息
 		roles := data.Roles
+		// 一一遍历
 		for _, v := range *roles {
+			// 取出角色id存入上文定义的role
 			role = append(role, utils.IntToString(v.ID))
 		}
 		if err != nil {
 			c.Abort()
 			return
 		}
+		// 这里加载配置
 		e, err := mycasbin.LoadPolicy()
 		if err != nil {
 			c.Abort()
